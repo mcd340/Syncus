@@ -445,6 +445,27 @@ with st.sidebar:
     if uploaded_file:
         st.success(f"✅ Bestand geladen: {uploaded_file.name}")
 
+        # CSV format configuration
+        st.markdown("#### CSV Formaat Instellingen")
+
+        separator_option = st.radio(
+            "Veld Separator",
+            options=["Comma (,)", "Semicolon (;)"],
+            index=1,  # Default to semicolon for Dutch files
+            help="Kies het scheidingsteken dat in je CSV wordt gebruikt"
+        )
+
+        decimal_option = st.radio(
+            "Decimaal Teken",
+            options=["Dot (.)", "Comma (,)"],
+            index=1,  # Default to comma for Dutch files
+            help="Kies het decimale scheidingsteken voor getallen"
+        )
+
+        # Map options to actual separators
+        separator = "," if separator_option == "Comma (,)" else ";"
+        decimal = "." if decimal_option == "Dot (.)" else ","
+
     st.markdown("---")
 
     # Number of clusters
@@ -477,12 +498,13 @@ if not client:
     st.warning("👈 Voer een OpenAI API key in via de sidebar om door te gaan")
     st.stop()
 
-# Load data
+# Load data with dynamic separator and decimal settings
 try:
-    df = pd.read_csv(uploaded_file)
+    df = pd.read_csv(uploaded_file, sep=separator, decimal=decimal)
     st.success(f"✅ Data geladen: {len(df)} rijen, {len(df.columns)} kolommen")
 except Exception as e:
     st.error(f"❌ Error bij het laden van data: {str(e)}")
+    st.error("💡 Tip: Controleer of de separator en decimaal instellingen correct zijn in de sidebar.")
     st.stop()
 
 # Create tabs
