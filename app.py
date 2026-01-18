@@ -101,32 +101,68 @@ def preprocess_data(df: pd.DataFrame) -> Tuple[np.ndarray, pd.DataFrame, ColumnT
     # Identify columns dynamically
     for col in df_clean.columns:
         col_lower = col.lower()
-        if 'age' in col_lower or 'amount' in col_lower or 'year' in col_lower:
+        if 'age' in col_lower or 'amount' in col_lower or 'year' in col_lower or 'bedrag' in col_lower or 'jaar' in col_lower or 'leeftijd' in col_lower:
             numerical_cols.append(col)
-        elif 'gender' in col_lower or 'city' in col_lower or 'brand' in col_lower or 'model' in col_lower:
+        elif 'gender' in col_lower or 'city' in col_lower or 'brand' in col_lower or 'model' in col_lower or 'geslacht' in col_lower or 'stad' in col_lower or 'merk' in col_lower:
             categorical_cols.append(col)
 
+    # If no columns detected, try to infer from data types
+    if not numerical_cols and not categorical_cols:
+        for col in df_clean.columns:
+            if pd.api.types.is_numeric_dtype(df_clean[col]):
+                numerical_cols.append(col)
+            else:
+                categorical_cols.append(col)
+
+    # Handle missing values FIRST
+    for col in numerical_cols:
+        # Fill NaN with median, if all NaN use 0
+        median_val = df_clean[col].median()
+        df_clean[col].fillna(median_val if pd.notna(median_val) else 0, inplace=True)
+
+        # Replace inf with max value
+        if np.isinf(df_clean[col]).any():
+            max_val = df_clean[col][~np.isinf(df_clean[col])].max()
+            df_clean[col].replace([np.inf, -np.inf], max_val if pd.notna(max_val) else 0, inplace=True)
+
+    for col in categorical_cols:
+        mode_val = df_clean[col].mode()
+        df_clean[col].fillna(mode_val[0] if len(mode_val) > 0 else 'Unknown', inplace=True)
+        # Convert to string to ensure consistency
+        df_clean[col] = df_clean[col].astype(str)
+
+    # Remove columns with zero variance (all same values)
+    numerical_cols_filtered = []
+    for col in numerical_cols:
+        if df_clean[col].std() > 0:  # Only keep columns with variance
+            numerical_cols_filtered.append(col)
+        else:
+            st.warning(f"⚠️ Kolom '{col}' heeft geen variatie en wordt overgeslagen.")
+
+    numerical_cols = numerical_cols_filtered
+
     # Create preprocessing pipelines
-    numerical_transformer = StandardScaler()
-    categorical_transformer = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+    if len(numerical_cols) == 0 and len(categorical_cols) == 0:
+        raise ValueError("Geen geschikte kolommen gevonden voor clustering. Controleer je data.")
+
+    transformers = []
+    if len(numerical_cols) > 0:
+        transformers.append(('num', StandardScaler(), numerical_cols))
+    if len(categorical_cols) > 0:
+        transformers.append(('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_cols))
 
     preprocessor = ColumnTransformer(
-        transformers=[
-            ('num', numerical_transformer, numerical_cols),
-            ('cat', categorical_transformer, categorical_cols)
-        ],
+        transformers=transformers,
         remainder='drop'
     )
 
-    # Handle missing values
-    for col in numerical_cols:
-        df_clean[col].fillna(df_clean[col].median(), inplace=True)
-
-    for col in categorical_cols:
-        df_clean[col].fillna(df_clean[col].mode()[0] if not df_clean[col].mode().empty else 'Unknown', inplace=True)
-
     # Fit and transform
     X_scaled = preprocessor.fit_transform(df_clean)
+
+    # Final check for NaN or Inf
+    if np.isnan(X_scaled).any() or np.isinf(X_scaled).any():
+        # Replace any remaining NaN or Inf with 0
+        X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
 
     return X_scaled, df_clean, preprocessor
 
